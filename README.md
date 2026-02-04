@@ -1,3 +1,50 @@
-# WXT + React
+<p align="center">
+  <img src=".github/images/ensight-logo.png" width="180" alt="ENSight Logo" />
+</p>
 
-This template should help get you started developing with React in WXT.
+<h1 align="center">ENSight Extension</h1>
+
+<p align="center">
+  Real-time perception layer for Ethereum — intercepting wallet actions and explaining intent, risk, and context.
+</p>
+
+<p align="center">
+  <a href="https://ethglobal.com" target="_blank">
+    <img src="https://img.shields.io/badge/ETHGlobal-Hackathon-blue" />
+  </a>
+  <a href="https://ethglobal.com/events/hackmoney2026/" target="_blank">
+    <img src="https://img.shields.io/badge/HackMoney%202026-Participant-purple" />
+  </a>
+  <img src="https://img.shields.io/badge/Platform-Chrome%20Extension-green" />
+</p>
+
+---
+
+## 🔄 Extension User Flow
+
+<p align="center">
+  <img src=".github/images/diagram-extension-flow.png" alt="ENSight Extension Flow Diagram" />
+</p>
+
+### How it works
+
+1. User visits a website  
+2. Website injects a wallet (`window.ethereum`)  
+3. ENSight hooks into the page runtime  
+4. Website calls `ethereum.request(...)`  
+5. ENSight intercepts method + parameters  
+6. Intent is forwarded to the background worker  
+7. ENSight side panel opens automatically  
+8. ENSight explains what’s about to happen (action, risk, context)
+
+---
+
+## 🚀 Why ENSight
+
+ENSight acts as a **real-time safety + context layer for Web3**, giving users clarity before they sign, approve, or interact with smart contracts.
+
+- Inline transaction explanations  
+- Scam & abnormal behavior detection  
+- Human-readable wallet intent  
+
+---

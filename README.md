@@ -60,7 +60,38 @@ ENSight acts as a **real-time safety + context layer for Web3**, giving users cl
 
 - Inline transaction explanations  
 - Scam & abnormal behavior detection  
-- Human-readable wallet intent  
+- Human-readable wallet intent
+
+---
+
+## ⛓️ On-Chain + Off-Chain Integration
+
+The extension is where blockchain truth meets real-time intelligence.
+
+It captures:
+
+- Raw wallet intent (methods + parameters)
+- Contract interactions
+- Approval flows
+
+And enriches them with:
+
+- Risk heuristics  
+- Context signals  
+- Human-readable explanations  
+
+All before the user signs.
+
+---
+
+## 🔐 Security Model
+
+- No private keys accessed  
+- Read-only interception  
+- Optional backend enrichment  
+- Sanitized payloads  
+
+ENSight is designed as a passive safety layer — not a wallet replacement.
 
 ---
 

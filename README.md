@@ -10,10 +10,10 @@
 
 <p align="center">
   <a href="https://ethglobal.com" target="_blank">
-    <img src="https://img.shields.io/badge/ETHGlobal-Hackathon-blue" />
+    <img src="https://img.shields.io/badge/Community-ETHGlobal-blue" />
   </a>
   <a href="https://ethglobal.com/events/hackmoney2026/" target="_blank">
-    <img src="https://img.shields.io/badge/HackMoney%202026-Participant-purple" />
+    <img src="https://img.shields.io/badge/Built%20at-HackMoney%202026-purple" />
   </a>
   <img src="https://img.shields.io/badge/Platform-Chrome%20Extension-green" />
 </p>
@@ -39,6 +39,21 @@
 
 ---
 
+## ⚙️ Tech Stack
+
+- WXT  
+- Chrome Extension APIs  
+- Runtime interception hooks  
+- Background workers  
+
+---
+
+## 🎯 Role in ENSight
+
+This repository contains the **client perception layer** of ENSight — responsible for detecting wallet activity, intercepting transaction intent, and presenting real-time context to users.
+
+---
+
 ## 🚀 Why ENSight
 
 ENSight acts as a **real-time safety + context layer for Web3**, giving users clarity before they sign, approve, or interact with smart contracts.
@@ -47,4 +62,3 @@ ENSight acts as a **real-time safety + context layer for Web3**, giving users cl
 - Scam & abnormal behavior detection  
 - Human-readable wallet intent  
 
----

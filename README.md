@@ -62,3 +62,6 @@ ENSight acts as a **real-time safety + context layer for Web3**, giving users cl
 - Scam & abnormal behavior detection  
 - Human-readable wallet intent  
 
+---
+
+Part of the ENSight ecosystem • Built for open Web3 infrastructure

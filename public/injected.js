@@ -1,0 +1,1 @@
+// page-context script to hook ethereum.request

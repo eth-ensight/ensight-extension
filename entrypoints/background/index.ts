@@ -1,8 +1,9 @@
 // background.ts
 // service worker (brain)
 
-// listens for messages from content script
-// stores "latest intent per tab"
+// receives intent messages
+// associates them with a browser tab
+// broadcasts updates to UI surfaces
 // opens side panel on intent (wow so cool lol)
 
 export default defineBackground(() => {

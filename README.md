@@ -95,4 +95,4 @@ ENSight is designed as a passive safety layer — not a wallet replacement.
 
 ---
 
-Part of the ENSight ecosystem • Built for open Web3 infrastructure
+<sub>Part of the ENSight ecosystem • Built for open Web3 infrastructure</sub>

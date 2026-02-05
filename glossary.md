@@ -72,6 +72,8 @@ background (service worker)
 
 **trace** – timeline of interactions.
 
+**heuristics** - smart guesses based on patterns, not guarantees
+
 ---
 
 ## debugging

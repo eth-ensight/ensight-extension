@@ -7,6 +7,14 @@
 // opens side panel on intent (wow so cool lol)
 
 export default defineBackground(() => {
-  console.log('Hello background!', { id: browser.runtime.id });
+  console.log("ensight: background running...");
+
+  browser.runtime.onMessage.addListener((msg, sender) => {
+    if (msg?.type === "ENSIGHT/PING") {
+      console.log("ensight: background received ping from content at URL: ",
+        msg.url
+      );
+    }
+  });
 });
 

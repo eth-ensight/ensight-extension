@@ -5,8 +5,11 @@
 // forwards structured intent to the background script
 
 export default defineContentScript({
-  matches: ['*://*.google.com/*'],
-  main() {
-    console.log('Hello content.');
-  },
+  matches: ['<all_urls>'],
+  runAt: "document_start",
+  main(){
+    console.log("ensight: content script running", location.href);
+
+    browser.runtime.sendMessage({ type: "ENSIGHT/PING", url: location.href });
+  }
 });

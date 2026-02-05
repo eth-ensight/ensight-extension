@@ -40,3 +40,60 @@ service worker logs should show: `ensight: got ping from content...`
 `runAt: "document_start"` - means it runs early
 
 ---
+
+## commit 2
+
+### detecting a wallet provider
+
+goal: detect whether a wallet provider (metamask, coinbase wallet, etc) is injected on the page so ENSight knows the site can make wallet calls.
+
+most web3 dapps expose a global object like:
+
+`window.ethereum`
+
+if it exists, the site can call wallet methods such as:
+- `eth_requestAccounts`
+- `eth_sendTransaction`
+- `personal_sign`
+
+---
+
+### ❌ broken approach (replaced)
+
+initial implementation:
+- checked `window.ethereum` directly inside the content script
+- polled briefly in case the wallet injected late
+
+this didn’t work reliably, and it took me a long ahh time to realize this is not it
+
+**why:** content scripts run in an isolated JS world.  
+wallets inject into the page’s JS context, so `window.ethereum` was often invisible to the extension.
+
+---
+
+### ✅ current approach (page-context injection)
+
+fix:
+- inject a small script directly into the page context
+- that script checks for `window.ethereum`
+- once found, it sends a message back to the content script
+- content script forwards it to the background
+
+flow:
+1. content script injects page script
+2. page script detects wallet provider
+3. message sent via `window.postMessage`
+4. background stores page-level wallet context
+
+---
+
+### what this commit unlocked
+
+- reliable wallet detection on any dapp
+- clean separation between page logic and extension logic
+- foundation for intercepting and explaining wallet calls later
+
+tldr: wallets live in the page’s JS world, not the extension’s.  
+injecting into the page is the only reliable way to see them.
+
+---

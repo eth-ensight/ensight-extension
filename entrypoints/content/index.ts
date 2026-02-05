@@ -5,11 +5,20 @@
 // forwards structured intent to the background script
 
 export default defineContentScript({
-  matches: ['<all_urls>'],
+  matches: ["<all_urls>"],
   runAt: "document_start",
-  main(){
-    console.log("ensight: content script running", location.href);
+  async main() {
+    await injectScript("/ethereum-main-world.js", { keepInDom: true });
 
-    browser.runtime.sendMessage({ type: "ENSIGHT/PING", url: location.href });
-  }
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (data?.ensight && data.type === "ETHEREUM_DETECTED") {
+        console.log("ENSight: wallet provider detected!");
+        browser.runtime.sendMessage({ type: "ENSIGHT/ETH_DETECTED", url: location.href });
+      }
+    });
+  },
 });
+
+

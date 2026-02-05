@@ -1,4 +1,4 @@
-# shernan's personal notes 
+# shernan's personal notes
 
 goal: take notes and brainstorm using this file while making this app so you can see how i think lol
 
@@ -6,12 +6,13 @@ ALSO i ran out of cursor credits so im rawdogging building this entire app readi
 
 ---
 
-## commit 1
+## phase 1 - setting up the extension
 
-provide WXT is building
-- background runs
-- content script injects on pages
-- they can messages each other
+prove WXT is building
+
+* background runs
+* content script injects on pages
+* they can message each other
 
 ### background entrypoint
 
@@ -21,65 +22,66 @@ the background entrypoint is the extension's brain essentially which receives ev
 
 `src/entrypoints/background/index.ts` to see my changes
 
-
 ### content entrypoint
 
 then i gotta make the content entrypoint
 
 the content entrypoint is how we "sit inside" websites and observe wallet calls,
 it runs inside browser tabs, can read page content and send messages back to the background.
-this is the basis of being able to detect when a wallet is on the page i believe? we shall see
+this is the basis of being able to detect when a wallet is on the page
 
 `src/entrypoints/content/index.ts` to see my code
 
-devtools console should show `ensight: content injected...`
-service worker logs should show: `ensight: got ping from content...`
+* devtools console should show `ensight: content script running`
+* service worker logs should show `ensight: content loaded`
 
-`defineContentScript()` - tells wxt this file should be injected as a content script
-`matches: ["<all_urls>"]` - ensures it loads on every page
-`runAt: "document_start"` - means it runs early
+`defineContentScript()` - marks this file as a content script
+`matches: ["<all_urls>"]` - loads on every page
+`runAt: "document_start"` - runs early
 
 ---
 
-## commit 2
+## phase 2 - detecting a wallet provider
 
-### detecting a wallet provider
-
-goal: detect whether a wallet provider (metamask, coinbase wallet, etc) is injected on the page so ENSight knows the site can make wallet calls.
+goal: detect whether a wallet provider (metamask, coinbase wallet, etc) is injected on the page so ensight knows the site can make wallet calls.
 
 most web3 dapps expose a global object like:
 
 `window.ethereum`
 
 if it exists, the site can call wallet methods such as:
-- `eth_requestAccounts`
-- `eth_sendTransaction`
-- `personal_sign`
+
+* `eth_requestAccounts`
+* `eth_sendTransaction`
+* `personal_sign`
 
 ---
 
 ### ❌ broken approach (replaced)
 
 initial implementation:
-- checked `window.ethereum` directly inside the content script
-- polled briefly in case the wallet injected late
 
-this didn’t work reliably, and it took me a long ahh time to realize this is not it
+* checked `window.ethereum` directly inside the content script
+* polled briefly in case the wallet injected late
 
-**why:** content scripts run in an isolated JS world.  
-wallets inject into the page’s JS context, so `window.ethereum` was often invisible to the extension.
+this didn’t work reliably and took way too long to click
+
+**why:** content scripts run in an isolated js world.
+wallets inject into the page’s js context, so `window.ethereum` was often invisible to the extension.
 
 ---
 
 ### ✅ current approach (page-context injection)
 
 fix:
-- inject a small script directly into the page context
-- that script checks for `window.ethereum`
-- once found, it sends a message back to the content script
-- content script forwards it to the background
+
+* inject a small script directly into the page context
+* that script checks for `window.ethereum`
+* once found, it sends a message back to the content script
+* content script forwards it to the background
 
 flow:
+
 1. content script injects page script
 2. page script detects wallet provider
 3. message sent via `window.postMessage`
@@ -87,13 +89,164 @@ flow:
 
 ---
 
-### what this commit unlocked
+### what this unlocked
 
-- reliable wallet detection on any dapp
-- clean separation between page logic and extension logic
-- foundation for intercepting and explaining wallet calls later
+* reliable wallet detection on any dapp
+* clean separation between page logic and extension logic
+* foundation for intercepting wallet calls later
 
-tldr: wallets live in the page’s JS world, not the extension’s.  
+tldr: wallets live in the page’s js world, not the extension’s.
 injecting into the page is the only reliable way to see them.
+
+---
+
+## phase 3 - intercept ethereum.request + emit intent events
+
+goal: see **what the wallet is being asked to do**, on **what site**, and **when**, without breaking anything.
+this is the perception layer before explanations, scoring, or social logic.
+
+phase 2 answered:
+
+> is there a wallet here?
+
+phase 3 answers:
+
+> what is this site asking the wallet to do right now?
+
+---
+
+### what we intercept (mvp)
+
+we monkey-patch `ethereum.request` in the page context and watch high-signal methods only:
+
+* `eth_requestAccounts`
+* `eth_sendTransaction`
+* `eth_sign`
+* `personal_sign`
+* `eth_signTypedData_v4`
+* `wallet_switchEthereumChain`
+* `wallet_addEthereumChain`
+
+this covers:
+
+* wallet connects
+* signatures (where scams actually hide)
+* value-moving transactions
+* chain switching (common phishing vector)
+
+---
+
+### where interception lives (important)
+
+this **must** run in the page’s js world.
+
+final flow:
+
+```
+page js
+→ ethereum-main-world.ts (patches ethereum.request)
+→ window.postMessage
+→ content script
+→ browser.runtime.sendMessage
+→ background service worker
+```
+
+why:
+
+* content scripts cannot access `window.ethereum`
+* wallets inject into the page, not the extension
+* page-context injection is the only reliable option
+
+---
+
+### intercepting safely
+
+rules:
+
+* store the original `ethereum.request`
+* wrap it
+* emit events on start / success / failure
+* never mutate args or return values
+
+**observing, not modifying**
+
+---
+
+### event shape (intentionally lightweight)
+
+no calldata decoding. no simulation.
+just intent + context.
+
+```ts
+{
+  type: "ETHEREUM_REQUEST",
+  phase: "before" | "after" | "error",
+  method: "eth_sendTransaction",
+  summary: {
+    kind: "tx",
+    to: "0xabc…",
+    value: "0.42",
+    hasData: true
+  },
+  page: {
+    hostname,
+    url,
+    title
+  },
+  ts
+}
+```
+
+---
+
+### background = event brain (for now)
+
+current responsibilities:
+
+* receive intent events
+* associate them with a tab
+* store short-lived history
+
+future responsibilities:
+
+* attach lightweight heuristics
+* generate explanations
+* power ui + social layers
+
+example heuristic ideas:
+
+```ts
+riskSignals = {
+  blindSignature: true,
+  newContract: true,
+  uncommonMethod: false,
+  valueOutlier: true
+}
+```
+
+---
+
+### ui interactions (later in phase 3 / phase 4)
+
+intended behavior:
+
+* extension reacts like metamask
+* opens or highlights on high-risk intent
+
+shows things like:
+
+* "this site is requesting a signature"
+* "you are about to send 0.42 eth"
+* "contract was just deployed"
+
+---
+
+### what phase 3 unlocked
+
+* reliable detection of real wallet actions
+* clean demos on real dapps
+* understanding intent without reading etherscan
+
+this is the core signal layer ensight is built on.
 
 ---

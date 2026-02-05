@@ -9,12 +9,17 @@
 export default defineBackground(() => {
   console.log("ensight: background running...");
 
-  browser.runtime.onMessage.addListener((msg, sender) => {
-    if (msg?.type === "ENSIGHT/PING") {
-      console.log("ensight: background received ping from content at URL: ",
-        msg.url
-      );
+  browser.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "ENSIGHT/CONTENT_LOADED") {
+      console.log("ensight: got CONTENT_LOADED", msg.url);
+      return Promise.resolve({ ok: true, type: "CONTENT_LOADED_ACK" });
+    }
+
+    if (msg?.type === "ENSIGHT/ETH_DETECTED") {
+      console.log("ensight: got ETH_DETECTED", msg.url);
+      return Promise.resolve({ ok: true, type: "ETH_DETECTED_ACK" });
     }
   });
 });
+
 

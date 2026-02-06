@@ -1,12 +1,14 @@
+// entrypoints/ethereum-main-world.ts
 // page-world script
-// runs alongside the site
-// observes ethereum provider + request lifecycle
-// emits structured wallet intent events
+// runs alongside the site (same JS world as window.ethereum)
+// patches ethereum.request
+// emits structured wallet intent events back to content script
 
 export default defineUnlistedScript(() => {
   const CHANNEL_FLAG = "ensight";
 
   // send events back to the extension
+  // the content script listens to window.postMessage
   const post = (payload: any) => {
     window.postMessage({ [CHANNEL_FLAG]: true, ...payload }, "*");
   };
@@ -19,6 +21,7 @@ export default defineUnlistedScript(() => {
   });
 
   // lightweight intent summary (no calldata decoding)
+  // just enough to explain what kind of action this is
   const summarize = (method: string, params: any) => {
     try {
       const p = Array.isArray(params) ? params : [];
@@ -31,6 +34,7 @@ export default defineUnlistedScript(() => {
           kind: "tx",
           to: typeof tx?.to === "string" ? tx.to : undefined,
           value: typeof tx?.value === "string" ? tx.value : undefined,
+          // data present = contract call most of the time
           hasData: typeof tx?.data === "string" && tx.data.length > 2,
         };
       }
@@ -60,24 +64,31 @@ export default defineUnlistedScript(() => {
   };
 
   // monkey-patch ethereum.request
+  // goal: observe wallet intent before it hits the wallet UI
   const patchProvider = (provider: any) => {
     if (!provider || typeof provider.request !== "function") return false;
+
+    // prevent double patching (multiple detections / multi-provider)
     if ((provider.request as any).__ensight_patched) return true;
 
     const original = provider.request.bind(provider);
     let sentActive = false;
 
     const wrapped = async (args: any) => {
+      // first time we see real wallet usage on this page
       if (!sentActive) {
         sentActive = true;
-        post({ type: "ETHEREUM_ACTIVE" }); // or keep name ETHEREUM_DETECTED but it now means "used"
+        post({ type: "ETHEREUM_ACTIVE" });
       }
+
+      // id ties before/after/error together
       const id = `${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
       const ts0 = Date.now();
+
       const method = args?.method ?? "unknown";
       const params = args?.params;
 
-      // request started
+      // request started (before wallet resolves)
       post({
         type: "ETHEREUM_REQUEST",
         phase: "before",
@@ -103,6 +114,7 @@ export default defineUnlistedScript(() => {
           page: pageCtx(),
           durationMs: ts1 - ts0,
           ok: true,
+          // keep result tiny (no big payloads)
           resultSummary: typeof result === "string" ? result.slice(0, 80) : result,
           summary: summarize(method, params),
         });
@@ -129,7 +141,10 @@ export default defineUnlistedScript(() => {
       }
     };
 
+    // mark patched
     (wrapped as any).__ensight_patched = true;
+
+    // swap in wrapped request
     provider.request = wrapped;
     return true;
   };
@@ -139,12 +154,10 @@ export default defineUnlistedScript(() => {
     const eth = (window as any).ethereum;
     if (!eth) return false;
 
-    //post({ type: "ETHEREUM_DETECTED" });
-
     // main provider
     patchProvider(eth);
 
-    // multi-provider wallets (e.g. metamask + others)
+    // multi-provider wallets (metamask + others)
     if (Array.isArray(eth?.providers)) {
       for (const p of eth.providers) patchProvider(p);
     }
@@ -153,6 +166,7 @@ export default defineUnlistedScript(() => {
   };
 
   // immediate + short retry window
+  // some wallets inject ethereum slightly after document_start
   if (!tryDetectAndPatch()) {
     const start = Date.now();
     const interval = window.setInterval(() => {
@@ -162,6 +176,6 @@ export default defineUnlistedScript(() => {
     }, 50);
   }
 
-  // metamask async init signal
+  // metamask also fires this async init signal
   window.addEventListener("ethereum#initialized", tryDetectAndPatch, { once: true });
 });

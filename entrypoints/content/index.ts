@@ -1,54 +1,83 @@
-// observer layer inside the page
-// injects injected.js into page context
-// listens to window.postMessage
-// filters for ethereum methods you care about
-// forwards structured intent to the background script
+// observer layer
+// injects page-world script
+// listens for wallet intent
+// forwards high-signal events to background
 
 export default defineContentScript({
   matches: ["<all_urls>"],
   runAt: "document_start",
 
   async main() {
-    console.log("ENSight: content script running", location.href);
+    console.log("ensight: content script running", location.href);
 
-    // listener first (avoid race)
-    let sent = false;
+    // prevent duplicate provider detected events
+    let sentDetected = false;
 
+    // only forward things users actually care about
+    const HIGH_SIGNAL_METHODS = new Set([
+      "eth_requestAccounts",
+      "eth_sendTransaction",
+      "eth_sign",
+      "personal_sign",
+      "eth_signTypedData",
+      "eth_signTypedData_v3",
+      "eth_signTypedData_v4",
+      "wallet_switchEthereumChain",
+      "wallet_addEthereumChain",
+    ]);
+
+    // bridge: page world -> extension world
     window.addEventListener("message", async (event) => {
       if (event.source !== window) return;
-      const data = event.data;
 
-      if (data?.ensight && data.type === "ETHEREUM_DETECTED" && !sent) {
-        sent = true;
-        console.log("ENSight: wallet provider detected!");
+      const data = event.data;
+      if (!data?.ensight) return;
+
+      // phase 2: provider present
+      if (data.type === "ETHEREUM_ACTIVE" && !sentDetected) {
+        sentDetected = true;
 
         try {
-          const res = await browser.runtime.sendMessage({
-            type: "ENSIGHT/ETH_DETECTED",
+          await browser.runtime.sendMessage({
+            type: "ENSIGHT/ETH_ACTIVE",
             url: location.href,
           });
-          console.log("ENSight: background ack", res);
         } catch (err) {
-          console.error("ENSight: failed to message background", err);
+          console.error("ensight: eth_active failed", err);
+        }
+
+        return;
+      }
+
+      // phase 3: intercepted ethereum.request
+      if (data.type === "ETHEREUM_REQUEST") {
+        const method = data.method as string;
+        if (!HIGH_SIGNAL_METHODS.has(method)) return;
+
+        try {
+          await browser.runtime.sendMessage({
+            type: "ENSIGHT/ETH_REQUEST",
+            event: data,
+          });
+        } catch (err) {
+          console.error("ensight: eth_request forward failed", err);
         }
       }
     });
 
-    // ping background (debug)
+    // debug ping
     try {
-      const res = await browser.runtime.sendMessage({
+      await browser.runtime.sendMessage({
         type: "ENSIGHT/CONTENT_LOADED",
         url: location.href,
       });
-      console.log("ENSight: background ack", res);
     } catch (err) {
-      console.error("ENSight: CONTENT_LOADED failed", err);
+      console.error("ensight: content_loaded failed", err);
     }
 
-    // now inject
-    await injectScript("/ethereum-main-world.js", { keepInDom: true });
+    // inject page-world script (window.ethereum lives here)
+    await injectScript("/ethereum-main-world.js", {
+      keepInDom: true,
+    });
   },
 });
-
-
-

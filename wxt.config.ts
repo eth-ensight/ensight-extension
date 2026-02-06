@@ -1,9 +1,13 @@
-import { defineConfig } from 'wxt';
+// wxt.config.ts
+import { defineConfig } from "wxt";
 
-// See https://wxt.dev/api/config.html
 export default defineConfig({
-  modules: ['@wxt-dev/module-react'],
+  modules: ["@wxt-dev/module-react"],
   manifest: {
+    permissions: ["tabs", "activeTab", "scripting"],
+    action: {
+      default_popup: "popup.html",
+    },
     web_accessible_resources: [
       {
         resources: ["ethereum-main-world.js"],
@@ -11,7 +15,5 @@ export default defineConfig({
       },
     ],
   },
-  webExt: {
-    disabled: true,
-  }
+  webExt: { disabled: true },
 });

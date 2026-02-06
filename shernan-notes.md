@@ -246,7 +246,72 @@ shows things like:
 * reliable detection of real wallet actions
 * clean demos on real dapps
 * understanding intent without reading etherscan
+* ability to react to *actual* wallet usage, not just provider presence
 
 this is the core signal layer ensight is built on.
 
 ---
+
+## phase 3.5 - activity signals + dynamic extension state
+
+goal: make ensight feel *alive* without being noisy.
+only react when something actually matters.
+
+key realization:
+
+> wallet *presence* ≠ wallet *activity*
+
+metamask injects `window.ethereum` on lots of pages.
+logging that everywhere is noise.
+
+so instead of treating "ethereum detected" as meaningful, we added an **activity signal**.
+
+---
+
+### ethereum_active signal
+
+we emit `ETHEREUM_ACTIVE` the **first time** a page actually calls `ethereum.request`.
+
+this means:
+
+* the page is a real dapp
+* the wallet is actually being used
+* we should start paying attention
+
+this happens once per page, not on every reload.
+
+---
+
+### dynamic extension icon
+
+ensight’s icon now reflects page state:
+
+* dark / muted → no wallet activity
+* lighter / active → ethereum was used on this page
+
+behavior:
+
+* icon flips on when `ETHEREUM_ACTIVE` or `ETHEREUM_REQUEST` fires
+* icon resets when the tab navigates to a new page
+
+this gives:
+
+* zero noise on normal sites
+* instant visual feedback on web3 activity
+
+quiet by default. loud when it matters.
+
+---
+
+### mental model update
+
+phase 3 isn’t about ui yet.
+it’s about **trusting the signal**.
+
+by the end of this phase, ensight:
+
+* knows when a wallet is actually used
+* captures intent safely
+* stays invisible unless needed
+
+phase 4 is where this turns into explanations + protection.

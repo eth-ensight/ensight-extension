@@ -1,7 +1,9 @@
-// observer layer
+// entrypoints/content/index.ts
+// observer layer inside the extension
 // injects page-world script
-// listens for wallet intent
-// forwards high-signal events to background
+// listens for wallet intent via window.postMessage
+// filters high-signal methods
+// forwards structured events to background
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -10,7 +12,7 @@ export default defineContentScript({
   async main() {
     console.log("ensight: content script running", location.href);
 
-    // prevent duplicate provider detected events
+    // prevent duplicate "active" events per page load
     let sentDetected = false;
 
     // only forward things users actually care about
@@ -27,13 +29,15 @@ export default defineContentScript({
     ]);
 
     // bridge: page world -> extension world
+    // main world script posts events via window.postMessage
     window.addEventListener("message", async (event) => {
+      // ensure this is a same-page message
       if (event.source !== window) return;
 
       const data = event.data;
       if (!data?.ensight) return;
 
-      // phase 2: provider present
+      // phase 2/3: page is web3-active (first wallet request happened)
       if (data.type === "ETHEREUM_ACTIVE" && !sentDetected) {
         sentDetected = true;
 
@@ -49,9 +53,11 @@ export default defineContentScript({
         return;
       }
 
-      // phase 3: intercepted ethereum.request
+      // phase 3+: intercepted ethereum.request lifecycle
       if (data.type === "ETHEREUM_REQUEST") {
         const method = data.method as string;
+
+        // drop noise
         if (!HIGH_SIGNAL_METHODS.has(method)) return;
 
         try {
@@ -65,7 +71,7 @@ export default defineContentScript({
       }
     });
 
-    // debug ping
+    // debug ping to confirm content script is live
     try {
       await browser.runtime.sendMessage({
         type: "ENSIGHT/CONTENT_LOADED",
@@ -76,6 +82,7 @@ export default defineContentScript({
     }
 
     // inject page-world script (window.ethereum lives here)
+    // keepInDom keeps the script node for debugging / visibility
     await injectScript("/ethereum-main-world.js", {
       keepInDom: true,
     });

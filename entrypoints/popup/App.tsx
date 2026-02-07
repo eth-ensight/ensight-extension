@@ -79,24 +79,46 @@ function timeAgo(ts: number) {
 }
 
 export default function App() {
+  console.log("POPUP BUILD MARKER v999");
   // session snapshot from background (active tab)
   const [session, setSession] = useState<Session | null>(null);
 
   // which feed item is expanded in the UI
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
+  console.log("popup render", session?.feed?.length);
   // subscribe to storage changes
   useEffect(() => {
     let alive = true;
   
     const load = async () => {
       try {
-        const res = await browser.runtime.sendMessage({ type: "ENSIGHT/GET_ACTIVE_SESSION" });
-        if (alive) setSession(res?.session ?? null);
-      } catch {
-        if (alive) setSession(null);
+        console.log("popup: load tick");
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        const tabId = tab?.id;
+        console.log("popup: active tabId", tabId, tab?.url);
+        if (typeof tabId !== "number") {
+          setSession(null);
+          return;
+        }
+
+        console.log("popup: sending GET_SESSION message");
+    
+        const res = await browser.runtime.sendMessage({
+          type: "ENSIGHT/GET_SESSION",
+          tabId,
+        });
+        console.log("popup: session?", !!res?.session, "feedLen", res?.session?.feed?.length);
+        console.log("popup: GET_SESSION response", res);
+        if (!alive) return;
+        setSession(res?.session ?? null);
+      } catch (error) {
+        console.log('popup: error in load', error);
+        if (!alive) return;
+        setSession(null);
       }
     };
+    
+    
   
     const onChanged = (changes: any, area: string) => {
       if (area !== "local") return;
@@ -271,6 +293,7 @@ export default function App() {
           onClick={() => {
             setSelectedId(null);
             browser.runtime.sendMessage({ type: "ENSIGHT/GET_ACTIVE_SESSION" }).then((res) => {
+              console.log("ensight: GET_ACTIVE_SESSION response", res);
               setSession(res?.session ?? null);
             });
           }}

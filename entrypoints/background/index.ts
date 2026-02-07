@@ -122,6 +122,7 @@ export default defineBackground(() => {
         tabId,
         path: on ? ICON_ON : ICON_OFF,
       });
+      void browser.runtime.lastError;
     } catch {
       // some pages block it, ignore
     }
@@ -368,14 +369,34 @@ export default defineBackground(() => {
 
 
     // phase 3+: wallet request lifecycle events
+    let lastTabId: number | null = null;
+
     if (msg?.type === "ENSIGHT/ETH_REQUEST") {
       const tabId = sender.tab?.id;
       if (tabId != null) {
+        lastTabId = tabId;
         upsertFromEvent(tabId, msg.event);
         await setTabIcon(tabId, true);
       }
-      return { ok: true };
     }
+
+
+    // popup: give me a specific tab session snapshot
+    if (msg?.type === "ENSIGHT/GET_SESSION") {
+      const tabId = msg?.tabId;
+      const s = typeof tabId === "number" ? tabSessions.get(tabId) : undefined;
+      console.log("ensight: GET_SESSION", tabId, "has?", !!s, "feedLen", s?.feed.length);
+      return { ok: true, session: s ? serializeSession(s) : null };
+    }
+      
+    if (msg?.type === "ENSIGHT/GET_LAST_SESSION") {
+      const tabId = lastTabId;
+      if (tabId == null) return { ok: true, session: null };
+      const s = tabSessions.get(tabId);
+      return { ok: true, session: s ? serializeSession(s) : null };
+    }
+    
+
 
     // popup: give me the active tab session snapshot
     // fallback to stored session if live session is not found

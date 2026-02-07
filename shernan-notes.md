@@ -315,3 +315,154 @@ by the end of this phase, ensight:
 * stays invisible unless needed
 
 phase 4 is where this turns into explanations + protection.
+
+
+### BEFORE WE GO TO PHASE 4
+
+im still currently working on getting this to work bruh
+
+## phase 3.75 - popup architecture, mv3 reality checks, and debugging pain
+
+goal: surface the intent data in popup without losing state or lying to myself about what's actually running
+
+this phase was less about ethereum and more about **how chrome extensions actually behave in production**
+
+
+### hard truth: mv3 popups are disposable
+
+popups are not apps, they are temporary views.
+
+facts i learned the hard way spending hours debugging this bs:
+
+- popups mount only when opened
+
+- popups unmount the moment you click away
+
+- popups do not share memory with the background
+
+- service worers can restart at any time
+
+- "it worked once" means absolutely nothing
+
+**this explains why:**
+
+- background logs looked correct
+
+- icon state updated
+
+- popup ui stayed frozen or empty
+
+**nothing was wrong, i was assuming popup had memory but it doesnt and im upset rn lol**
+
+
+### background state != ui state
+
+**my early mental model:**
+> background stores session -> popup reads it -> ui updates
+
+**actual reality:**
+- background holds state in memory (map)
+- mv3 can kill the backgroun worker at any moment
+- popup polls or messages a worker that may have restarted
+- resukt: intermittent null sessions
+
+**lesson learned:**
+> if **state matters across time**, it **must** live in `storage`.
+
+
+### ✅ storage as source of truth
+
+correct pattern for mv3 popups:
+- background **writes snapshots** to `browser.storage.local`
+- popup reads from storage on mount
+- popup subscribes to storage.onChanged
+- ui reacts to data changes, not messages
+
+this removes:
+- race conditions
+- tab guessing
+- worker restarts
+- polling hacks
+
+storage is slow but reliable, perfect for ui state
+
+### debugging traps
+
+- wxt does not reliably hot reload popups
+- chrome happily runs stale popup bundles
+- backgroud logs updating != popup code updating
+
+
+### why phase 3.75 matters
+
+i didnt necessarily add any features but i benefited a lot from all of these:
+
+- it forced a correct mental model of mv3
+- prevented future ghost bugs
+- made me understand chrome extensions a lot more and wxt and debugging
+- made later ui work easier
+
+### meta thought
+
+i kept thinking "**goddamn why is this so hard am i seriously this ngmi??**" 
+
+then i realized the answer is
+
+**chrome extensions are distributed systems**
+- im not just building "one app"
+- im building **multiple programs running in different places** that only talk via messages
+
+what does this mean?
+i have:
+ - page js (website and injected script)
+ - content script (isolated world per tab)
+ - background service worker
+ - popup ui
+
+each one:
+- has its own lifecycle
+- has its own memory
+- can disappear independently
+- cannot directly share variables
+
+the system is so f'in fragmented bruh thats why bugs feel ghosty
+background logs can look correct, popup is empty still somehow even though nothing "crashed", and the state isnt there
+
+**the processes can die at any time without telling you**
+
+- popup unmounts instantly when you click away
+- background service worker restarts silently
+- content scripts reload on navigation
+- tab IDs disappear
+
+memory only exists while the process is alive
+
+its why map state in background vanished, popup polling returned null, and things work once then stopped
+
+storage is the only thing that survives process death
+
+**async boundaries everywhere**
+
+every hop in the system is async - why is that a problem?
+
+each boundary introduces:
+- timing uncertainty
+- race conditions
+- ordering issues
+-partial failures
+
+i noticed this when
+- popup asked for session before background had one
+- background had data but popup wasn't mounted yet
+- tab changed between request and response
+
+**so why does this matter**
+- memory = cache, never source of truth (pretty obvious but im silly for using it)
+- storage = truth
+- messages = requests, not guarantees
+- ui = derived, not authoritative
+
+the eventual solution:
+snapshot -> store -> react to changes
+
+ill add more diagrams to this part probably to help myself understand this or other ppl who actually read it

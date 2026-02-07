@@ -136,12 +136,15 @@ export default defineBackground(() => {
     if (changeInfo.status === "loading") {
       setTabIcon(tabId, false);
       tabSessions.delete(tabId); // wipe session for the new page
+
+      browser.storage.local.remove(sessionKey(tabId));
     }
   });
 
   // cleanup on close
   browser.tabs.onRemoved.addListener((tabId) => {
     tabSessions.delete(tabId);
+    browser.storage.local.remove(sessionKey(tabId));
   });
 
   // ------------------------------------------------------------
@@ -314,6 +317,19 @@ export default defineBackground(() => {
   });
 
   // ------------------------------------------------------------
+  // persistence helpers (so popup survives MV3 worker restarts)
+  // ------------------------------------------------------------
+
+  const sessionKey = (tabId: number) => `ensight:session:${tabId}`;
+
+  const persistSession = async (tabId: number) => {
+    const s = tabSessions.get(tabId);
+    await browser.storage.local.set({
+      [sessionKey(tabId)]: s ? serializeSession(s) : null,
+    });
+  };
+
+  // ------------------------------------------------------------
   // message router (content script + popup)
   // ------------------------------------------------------------
 
@@ -344,9 +360,12 @@ export default defineBackground(() => {
         s.isActive = true;
         s.lastSeenAt = Date.now();
         await setTabIcon(tabId, true);
+
+        await persistSession(tabId); // ✅ here
       }
       return { ok: true };
     }
+
 
     // phase 3+: wallet request lifecycle events
     if (msg?.type === "ENSIGHT/ETH_REQUEST") {
@@ -359,14 +378,19 @@ export default defineBackground(() => {
     }
 
     // popup: give me the active tab session snapshot
+    // fallback to stored session if live session is not found
     if (msg?.type === "ENSIGHT/GET_ACTIVE_SESSION") {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       const tabId = tab?.id;
       if (tabId == null) return { ok: true, session: null };
-
-      const s = tabSessions.get(tabId);
-      return { ok: true, session: s ? serializeSession(s) : null };
+    
+      const live = tabSessions.get(tabId);
+      if (live) return { ok: true, session: serializeSession(live) };
+    
+      const stored = await browser.storage.local.get(sessionKey(tabId));
+      return { ok: true, session: stored[sessionKey(tabId)] ?? null };
     }
+    
 
     // legacy debug endpoint (optional)
     if (msg?.type === "ENSIGHT/GET_EVENTS") {

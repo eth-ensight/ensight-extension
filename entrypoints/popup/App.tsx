@@ -85,30 +85,33 @@ export default function App() {
   // which feed item is expanded in the UI
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // poll background for updates
-  // (later: switch to runtime.connect ports for push)
+  // subscribe to storage changes
   useEffect(() => {
     let alive = true;
-
+  
     const load = async () => {
       try {
         const res = await browser.runtime.sendMessage({ type: "ENSIGHT/GET_ACTIVE_SESSION" });
-        if (!alive) return;
-        setSession(res?.session ?? null);
+        if (alive) setSession(res?.session ?? null);
       } catch {
-        if (!alive) return;
-        setSession(null);
+        if (alive) setSession(null);
       }
     };
-
+  
+    const onChanged = (changes: any, area: string) => {
+      if (area !== "local") return;
+      // easiest: just reload when any local storage changes
+      load();
+    };
+  
     load();
-    const t = window.setInterval(load, 800);
-
+    browser.storage.onChanged.addListener(onChanged);
+  
     return () => {
       alive = false;
-      window.clearInterval(t);
+      browser.storage.onChanged.removeListener(onChanged);
     };
-  }, []);
+  }, []);  
 
   const feed = session?.feed ?? [];
 

@@ -6,6 +6,9 @@
 // feeds the popup clean, UI-ready snapshots
 
 export default defineBackground(() => {
+  // open side panel when user clicks ENSight action icon
+  browser.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
+
   console.log("ensight: background running");
 
   // ------------------------------------------------------------
@@ -363,7 +366,11 @@ export default defineBackground(() => {
         await setTabIcon(tabId, true);
 
         await persistSession(tabId); // ✅ here
+        await browser.storage.local.set({
+          "ensight:activeSession": serializeSession(getSession(tabId)),
+        });
       }
+      
       return { ok: true };
     }
 
@@ -377,6 +384,10 @@ export default defineBackground(() => {
         lastTabId = tabId;
         upsertFromEvent(tabId, msg.event);
         await setTabIcon(tabId, true);
+        await persistSession(tabId);
+        await browser.storage.local.set({
+          "ensight:activeSession": serializeSession(getSession(tabId)),
+        });
       }
     }
 

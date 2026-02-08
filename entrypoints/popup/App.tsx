@@ -92,27 +92,12 @@ export default function App() {
   
     const load = async () => {
       try {
-        console.log("popup: load tick");
-        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-        const tabId = tab?.id;
-        console.log("popup: active tabId", tabId, tab?.url);
-        if (typeof tabId !== "number") {
-          setSession(null);
-          return;
-        }
-
-        console.log("popup: sending GET_SESSION message");
-    
         const res = await browser.runtime.sendMessage({
-          type: "ENSIGHT/GET_SESSION",
-          tabId,
+          type: "ENSIGHT/GET_ACTIVE_SESSION",
         });
-        console.log("popup: session?", !!res?.session, "feedLen", res?.session?.feed?.length);
-        console.log("popup: GET_SESSION response", res);
         if (!alive) return;
         setSession(res?.session ?? null);
       } catch (error) {
-        console.log('popup: error in load', error);
         if (!alive) return;
         setSession(null);
       }

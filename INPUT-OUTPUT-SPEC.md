@@ -1,8 +1,8 @@
 # ENSight Extension - Input/Output Specification
 
-**Version**: 1.0.0
-**Last Updated**: 2026-02-05
-**Status**: Detection Phase Only
+**Version**: 1.1.0
+**Last Updated**: 2026-02-08
+**Status**: Interception Phase — wallet request lifecycle observed; per-tab feed; popup shows activity; backend risk API client ready.
 
 ---
 
@@ -88,83 +88,83 @@ runAt: "document_start"         // Inject before page loads
 #### From Content Script → Background:
 ```typescript
 // Content script initialized
-{
-  type: "ENSIGHT/CONTENT_LOADED",
-  url: string                    // Current page URL
-}
+{ type: "ENSIGHT/CONTENT_LOADED", url: string }
 
-// Wallet provider detected
-{
-  type: "ENSIGHT/ETH_DETECTED",
-  url: string                    // Page where detected
-}
+// First real wallet usage on page (ethereum.request called)
+{ type: "ENSIGHT/ETH_ACTIVE", url: string }
+
+// Each intercepted wallet request (before/after/error)
+{ type: "ENSIGHT/ETH_REQUEST", event: EthereumRequestEvent }
+// event: { id, phase: "before"|"after"|"error", method, params?, page?, summary?, ... }
 ```
 
-#### From Background → Content (Acknowledgments):
+#### From Popup → Background (requests):
 ```typescript
-{
-  ok: boolean,
-  type: "CONTENT_LOADED_ACK" | "ETH_DETECTED_ACK"
-}
+{ type: "ENSIGHT/GET_ACTIVE_SESSION" }   // Session for active tab (fallback to storage)
+{ type: "ENSIGHT/GET_SESSION", tabId: number }
+{ type: "ENSIGHT/GET_LAST_SESSION" }
+{ type: "ENSIGHT/GET_EVENTS" }            // Legacy debug
+{ type: "ENSIGHT/DEBUG_ALL_SESSIONS" }
+```
+
+#### Background → Content / Popup (responses):
+```typescript
+{ ok: true }
+{ ok: true, session: SerializedSession | null }
+{ ok: true, all: Array<{ tabId, isActive, hostname, counts, feedLen }> }
 ```
 
 ---
 
 ### 4. Page-to-Extension Communication
 
-**Source**: Injected page script
-**Protocol**: `window.postMessage`
+**Source**: Injected page script (`ethereum-main-world.ts`)
+**Protocol**: `window.postMessage` (all payloads include `ensight: true`)
 
 **Expected Messages**:
 ```typescript
+// First time a wallet request is made on the page
+{ ensight: true, type: "ETHEREUM_ACTIVE" }
+
+// Every intercepted ethereum.request (high-signal methods only)
 {
-  ensight: true,                 // Namespace flag
-  type: "ETHEREUM_DETECTED"      // Event type
+  ensight: true,
+  type: "ETHEREUM_REQUEST",
+  id: string,                    // Ties before/after/error together
+  phase: "before" | "after" | "error",
+  ts?: number,
+  method: string,
+  params?: any[],
+  page?: { url, hostname, title },
+  summary?: { kind, to?, value?, hasData?, chainId? },
+  durationMs?: number,
+  ok?: boolean,
+  error?: { name, message },
+  resultSummary?: any
 }
 ```
 
 **Security Filter**:
 ```typescript
-// Content script validates:
-event.source === window         // Must be from same window
-data?.ensight === true          // Must have namespace
+event.source === window && data?.ensight === true
 ```
+
+**High-signal methods** (content script forwards only these): `eth_requestAccounts`, `eth_sendTransaction`, `eth_sign`, `personal_sign`, `eth_signTypedData*`, `wallet_switchEthereumChain`, `wallet_addEthereumChain`.
 
 ---
 
-### 5. Future Inputs (Not Yet Implemented)
+### 5. Backend API (Extension → ensight-backend)
 
-#### Wallet Method Calls to Intercept:
-```typescript
-// Transaction submission
-window.ethereum.request({
-  method: "eth_sendTransaction",
-  params: [{
-    from: "0x...",
-    to: "0x...",
-    data: "0x...",
-    value: "0x...",
-    gas: "0x..."
-  }]
-})
+**Configuration**: API base URL is stored in `browser.storage.local` under key `ensight:apiBaseUrl`. If not set, no backend calls are made.
 
-// Typed data signing (permits, approvals)
-window.ethereum.request({
-  method: "eth_signTypedData_v4",
-  params: [address, typedData]
-})
+**Risk lookup (implemented)** — see `utils/backend.ts`:
 
-// Personal message signing
-window.ethereum.request({
-  method: "personal_sign",
-  params: [message, address]
-})
+| Endpoint | Method | Input | Output |
+|----------|--------|-------|--------|
+| `/api/risk/address/:address` | GET | Path param: Ethereum address (0x-prefixed, 42 chars) | `{ flagged: boolean, lastUpdated: number \| null }` |
 
-// Account access request
-window.ethereum.request({
-  method: "eth_requestAccounts"
-})
-```
+- **Extension client**: `getRiskForAddress(address)` → returns `RiskAddressResponse \| null` (null if backend not configured or request fails).
+- **Setting base URL**: `setApiBaseUrl(url)` / `getApiBaseUrl()` from `utils/backend.ts`.
 
 ---
 
@@ -226,94 +226,32 @@ window.ethereum.request({
 
 ### 3. State Changes (Background Worker)
 
-**Internal State** (not persisted yet):
+**Per-tab session** (in memory + persisted to `browser.storage.local` after each ETH_ACTIVE and each ETH_REQUEST):
 ```typescript
-// Conceptual state structure (not implemented)
 {
-  tabs: {
-    [tabId: number]: {
-      hasWallet: boolean,
-      url: string,
-      lastDetection: timestamp
-    }
-  }
+  tabId: number,
+  isActive: boolean,
+  lastSeenAt: number,
+  hostname?: string,
+  title?: string,
+  counts: { connect, sign, tx, chain, unknown },
+  feed: RequestRecord[],   // Newest first, max 50; each has id, method, kind, severity, phase, oneLiner, ...
+  byId: Record<string, RequestRecord>
 }
 ```
-
-**Current Implementation**: Stateless (logs only)
+Storage key: `ensight:session:${tabId}`. Session is cleared on tab navigation (loading) or tab close.
 
 ---
 
-### 4. User Interface (Future)
+### 4. User Interface (Popup)
 
-**Planned Outputs**:
+**Popup** requests `ENSIGHT/GET_ACTIVE_SESSION` and displays:
+- Header: hostname, "web3 active" / "inactive", last seen time
+- Counts: connect, sign, tx, chain
+- Activity feed: one-liners per request, severity pills, expandable details (method, phase, to, value, hasData, chainId, error, paramsPreview)
+- Refresh button (re-requests GET_ACTIVE_SESSION)
 
-#### Side Panel Display:
-```
-┌─────────────────────────────┐
-│ ⚠️ Transaction Detected     │
-├─────────────────────────────┤
-│                             │
-│ You're about to:            │
-│ • Swap 100 USDC for ETH     │
-│                             │
-│ Risk Level: 🟢 Low          │
-│                             │
-│ Contract: Uniswap V3 Router │
-│ ✓ Verified                  │
-│                             │
-│ [Approve] [Reject]          │
-└─────────────────────────────┘
-```
-
-#### Popup Display:
-```
-ENSight Status
-
-🟢 Active on 3 tabs
-📊 12 transactions analyzed today
-🛡️ 2 risky transactions blocked
-```
-
----
-
-### 5. Future: Backend API Calls (Not Implemented)
-
-**Expected Request Format**:
-```typescript
-POST /api/analyze-transaction
-Content-Type: application/json
-
-{
-  method: "eth_sendTransaction",
-  params: [...],
-  origin: "https://app.uniswap.org",
-  chainId: 1,
-  timestamp: 1234567890
-}
-```
-
-**Expected Response**:
-```typescript
-{
-  intent: "Swap 100 USDC for ETH on Uniswap V3",
-  risk: {
-    level: "low" | "medium" | "high",
-    score: 0.15,
-    factors: [
-      "Contract is verified ✓",
-      "Normal gas usage ✓",
-      "Reasonable token amounts ✓"
-    ]
-  },
-  context: {
-    contractName: "Uniswap V3 Router",
-    contractVerified: true,
-    tokenSymbols: ["USDC", "WETH"],
-    estimatedImpact: "$350.50"
-  }
-}
-```
+**Tab icon**: Off (normal) vs on (web3-active tab).
 
 ---
 
@@ -432,37 +370,32 @@ pnpm dev
 
 ### How to Know It's Working
 
-#### ✅ Successful Detection:
-1. Load extension in Chrome
-2. Navigate to Uniswap (https://app.uniswap.org)
-3. Open DevTools Console
-4. See: `"ENSight: wallet provider detected!"`
-5. Check Service Worker logs
-6. See: `"ensight: got ETH_DETECTED <url>"`
+#### ✅ Successful interception and UI:
+1. Load extension in Chrome (`pnpm dev` in ensight-extension).
+2. Navigate to a dApp (e.g. https://app.uniswap.org) and connect wallet or trigger a tx/sign.
+3. Extension icon for that tab turns "on".
+4. Open popup (click extension icon): see hostname, "web3 active", counts, and feed of requests (connect/sign/tx/chain) with one-liners and expandable details.
+5. After closing popup and re-opening, session still shown (persisted to storage).
 
-#### ❌ Failed Detection Scenarios:
+#### ❌ Failed scenarios:
 | Scenario | Expected Behavior |
 |----------|-------------------|
-| No wallet installed | No detection logs (correct) |
-| Wallet disabled | No detection logs (correct) |
-| Non-Web3 site | Content script runs, no wallet (correct) |
-| CSP blocked injection | Error in console (investigate) |
+| No wallet installed | No feed (correct) |
+| Non-Web3 site | Content script runs, no wallet activity (correct) |
+| CSP blocked injection | Page script may not load; check console |
 
 ---
 
 ### Manual Test Checklist
 
 ```
-[ ] Extension loads without errors
+[ ] Extension loads without errors (pnpm dev)
 [ ] Content script injects on all pages
-[ ] MetaMask detected on Uniswap ✓
-[ ] Coinbase Wallet detected on OpenSea ✓
-[ ] No false positives on non-Web3 sites ✓
-[ ] Background worker receives messages ✓
-[ ] Acknowledgments returned to content script ✓
-[ ] No memory leaks after 10 page loads ✓
-[ ] Works on async wallet injection ✓
-[ ] Handles rapid tab switching ✓
+[ ] On dApp: connect/sign/tx/chain appear in popup feed ✓
+[ ] Tab icon turns "on" when wallet used on that tab ✓
+[ ] Popup shows GET_ACTIVE_SESSION session (counts + feed) ✓
+[ ] After worker restart, popup still shows last session (storage fallback) ✓
+[ ] Backend: setApiBaseUrl() then getRiskForAddress(addr) returns { flagged, lastUpdated } when backend is up ✓
 ```
 
 ---
@@ -473,35 +406,27 @@ pnpm dev
 ┌─────────────────────────────────────────────────────────────┐
 │                         Web Page                             │
 │  ┌────────────────────────────────────────────────────┐     │
-│  │  Page Context (Website's JS World)                 │     │
-│  │                                                     │     │
-│  │  window.ethereum ← Injected by Wallet Extension    │     │
-│  │         ↓                                           │     │
-│  │  ethereum-main-world.ts (ENSight detector)         │     │
-│  │         ↓                                           │     │
-│  │  window.postMessage({ type: "ETHEREUM_DETECTED" }) │     │
+│  │  Page Context: ethereum-main-world.ts               │     │
+│  │  Patches window.ethereum.request                   │     │
+│  │  → postMessage ETHEREUM_ACTIVE (first use)         │     │
+│  │  → postMessage ETHEREUM_REQUEST (before/after/error)│     │
 │  └────────────────────────────────────────────────────┘     │
 │                         ↓                                    │
 │  ┌────────────────────────────────────────────────────┐     │
-│  │  Content Script (Isolated JS World)                │     │
-│  │                                                     │     │
-│  │  Receives postMessage                              │     │
-│  │         ↓                                           │     │
-│  │  browser.runtime.sendMessage({                     │     │
-│  │    type: "ENSIGHT/ETH_DETECTED"                    │     │
-│  │  })                                                 │     │
+│  │  Content Script                                    │     │
+│  │  Forwards ENSIGHT/ETH_ACTIVE, ENSIGHT/ETH_REQUEST  │     │
 │  └────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│             Extension Background (Service Worker)           │
-│                                                              │
-│  onMessage.addListener((msg) => {                           │
-│    if (msg.type === "ENSIGHT/ETH_DETECTED") {               │
-│      console.log("Wallet detected on:", msg.url)            │
-│      // Future: Open side panel, analyze intent             │
-│    }                                                         │
-│  })                                                          │
+│             Background (Service Worker)                      │
+│  Per-tab sessions; upsertFromEvent(); persistSession();      │
+│  Handles GET_ACTIVE_SESSION, GET_SESSION (serialized feed)   │
+└─────────────────────────────────────────────────────────────┘
+                         ↑
+┌─────────────────────────────────────────────────────────────┐
+│  Popup  → GET_ACTIVE_SESSION → session (feed, counts, etc.)  │
+│  Optional: getRiskForAddress(to) via utils/backend.ts        │
 └─────────────────────────────────────────────────────────────┘
 ```
 

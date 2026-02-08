@@ -377,6 +377,7 @@ export default defineBackground(() => {
         lastTabId = tabId;
         upsertFromEvent(tabId, msg.event);
         await setTabIcon(tabId, true);
+        await persistSession(tabId);
       }
     }
 

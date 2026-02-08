@@ -8,7 +8,7 @@
 
 A Chrome extension that **intercepts Ethereum wallet transactions** and explains them in human-readable terms before users sign.
 
-**Current Status**: 🟡 **Detection Phase** - Can detect wallets, cannot yet intercept transactions
+**Current Status**: 🟢 **Interception Phase** - Intercepts connect/sign/tx/chain; per-tab feed; popup shows activity; backend risk client ready
 
 ---
 
@@ -16,7 +16,7 @@ A Chrome extension that **intercepts Ethereum wallet transactions** and explains
 
 | Component | File | Purpose | Context |
 |-----------|------|---------|---------|
-| **Page Detector** | `ethereum-main-world.ts` | Detect `window.ethereum` | Page JS world |
+| **Page Script** | `ethereum-main-world.ts` | Patch `ethereum.request`; emit ETHEREUM_ACTIVE / ETHEREUM_REQUEST | Page JS world |
 | **Content Script** | `content/index.ts` | Bridge layer | Isolated world |
 | **Background Worker** | `background/index.ts` | Central brain | Service worker |
 | **Popup UI** | `popup/App.tsx` | Extension UI | React popup |
@@ -26,57 +26,23 @@ A Chrome extension that **intercepts Ethereum wallet transactions** and explains
 ## Message Flow
 
 ```
-Page detects wallet
-  ↓ window.postMessage
-Content Script receives
-  ↓ browser.runtime.sendMessage
-Background Worker processes
+Page: ethereum.request patched → postMessage(ETHEREUM_ACTIVE / ETHEREUM_REQUEST)
+  ↓
+Content Script → sendMessage(ENSIGHT/ETH_ACTIVE | ENSIGHT/ETH_REQUEST)
+  ↓
+Background: upsertFromEvent(); persistSession(); setTabIcon
+  ↑
+Popup: GET_ACTIVE_SESSION → session (feed, counts)
 ```
 
 ---
 
-## Input Expectations
+## Inputs / Outputs
 
-### ✅ Currently Accepts
-- **Wallet Provider Detection**: Checks for `window.ethereum` object
-- **Supported Wallets**: MetaMask, Coinbase Wallet, any EIP-1193 provider
-- **Timing**: Handles both sync and async injection (polls 3 seconds)
+- **Inputs**: `window.ethereum.request` (connect, sign, tx, chain methods); high-signal methods only (see content script).
+- **Outputs**: Per-tab session (feed, counts, hostname); persisted to storage; popup shows one-liners + details. Backend: `getRiskForAddress(addr)` → `{ flagged, lastUpdated }` when API base URL set.
 
-### ❌ Not Yet Implemented
-- Wallet method interception (`eth_sendTransaction`, etc.)
-- Transaction parameter extraction
-- Contract ABI decoding
-
----
-
-## Output Behavior
-
-### Current Outputs
-
-**Console Logs**:
-```javascript
-// Content Script
-"ENSight: content script running <url>"
-"ENSight: wallet provider detected!"
-
-// Background Worker
-"ensight: got ETH_DETECTED <url>"
-```
-
-**Messages**:
-```typescript
-// Detection message
-{ type: "ENSIGHT/ETH_DETECTED", url: string }
-
-// Acknowledgment
-{ ok: true, type: "ETH_DETECTED_ACK" }
-```
-
-### Future Outputs (Roadmap)
-- Side panel with transaction explanations
-- Risk scores (low/medium/high)
-- Human-readable intent descriptions
-- Contract context information
+See **INPUT-OUTPUT-SPEC.md** and **utils/messages.ts** for exact message types and payloads.
 
 ---
 

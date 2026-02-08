@@ -4,9 +4,8 @@ import { defineConfig } from "wxt";
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: {
-    permissions: ["tabs", "activeTab", "scripting", "storage"],
+    permissions: ["tabs", "activeTab", "scripting", "storage", "sidePanel"],
     action: {
-      default_popup: "popup.html",
     },
     web_accessible_resources: [
       {

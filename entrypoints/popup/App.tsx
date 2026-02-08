@@ -1,291 +1,159 @@
-// entrypoints/popup/App.tsx
-// popup UI (mvp)
-// asks background for current tab session
-// renders a simple activity feed + details panel
-// polls for updates (cheap + easy for phase 4)
+import { useEffect, useState } from 'react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount, useEnsAvatar, useEnsName } from 'wagmi';
+import { MSG_GET_ACTIVE_SESSION } from '~/utils/messages';
+import type { TabSession, FeedItem } from '~/utils/types';
+import { formatRelativeTime, shortAddress } from '~/utils/format';
 
-import { useEffect, useMemo, useState } from "react";
-import { browser } from "wxt/browser";
-import "./App.css";
+function EnsAddress({ address, backendEns }: { address: string; backendEns?: { name: string; avatar?: string | null } }) {
+  // Prefer backend-resolved ENS (already available without a new RPC call)
+  const { data: wagmiName } = useEnsName({ address: address as `0x${string}`, chainId: 1 });
+  const resolvedName = backendEns?.name ?? wagmiName;
+  const { data: wagmiAvatar } = useEnsAvatar({ name: resolvedName ?? undefined, chainId: 1 });
+  const avatar = backendEns?.avatar ?? wagmiAvatar;
+  const display = resolvedName ?? shortAddress(address);
+  return (
+    <span className="ens-address">
+      {avatar && <img src={avatar} alt="" className="ens-avatar" />}
+      <span>{display}</span>
+    </span>
+  );
+}
 
-type Severity = "info" | "warn" | "danger";
-type Kind = "connect" | "tx" | "sign" | "chain" | "unknown";
+function RiskBadge({ flagged }: { flagged: boolean }) {
+  if (!flagged) return null;
+  return <span className="risk-badge risk-badge--danger" title="Address flagged by ScamSniffer">FLAGGED</span>;
+}
 
-type FeedItem = {
-  id: string;
-  method: string;
-  kind: Kind;
-  severity: Severity;
+function FeedItemRow({ item, expanded, onToggle }: { item: FeedItem; expanded: boolean; onToggle: () => void }) {
+  const toAddr = item.params?.to as string | undefined;
+  const hasAddress = toAddr && /^0x[a-fA-F0-9]{40}$/.test(toAddr);
 
-  // lifecycle
-  phase: "before" | "after" | "error";
-  ok?: boolean;
-  error?: { name?: string; message?: string };
-  durationMs?: number;
-
-  // page context
-  page?: { hostname?: string; title?: string; url?: string };
-
-  // tx hints
-  to?: string;
-  value?: string;
-  hasData?: boolean;
-
-  // chain hints
-  chainId?: string;
-
-  // safe preview for debug
-  paramsPreview?: any;
-
-  // UI-ready one-liner from background
-  oneLiner?: string;
-};
-
-type Session = {
-  tabId: number;
-  isActive: boolean;
-  lastSeenAt: number;
-  hostname?: string;
-  title?: string;
-  counts: Record<Kind, number>;
-  feed: FeedItem[];
-};
-
-// css class for the pill
-const pill = (severity: Severity) => {
-  if (severity === "danger") return "pill pill-danger";
-  if (severity === "warn") return "pill pill-warn";
-  return "pill pill-info";
-};
-
-// tiny icon per action type
-const icon = (kind: Kind) => {
-  if (kind === "tx") return "↗";
-  if (kind === "sign") return "✍";
-  if (kind === "connect") return "🔌";
-  if (kind === "chain") return "⛓";
-  return "•";
-};
-
-// "last seen" helper
-function timeAgo(ts: number) {
-  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 5) return "now";
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
+  return (
+    <div
+      className={`feed-item feed-item--${item.severity}`}
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => e.key === 'Enter' && onToggle()}
+    >
+      <div className="feed-item-header">
+        <span className="feed-item-kind">{item.kind}</span>
+        <span className="feed-item-oneliner">{item.oneLiner}</span>
+        {item.risk?.flagged && <RiskBadge flagged={true} />}
+        <span className="feed-item-phase">{item.phase}</span>
+      </div>
+      {expanded && (
+        <div className="feed-item-detail">
+          <div>Method: {item.method}</div>
+          <div>Phase: {item.phase}</div>
+          {item.params?.to != null && (
+            <div>
+              To: {hasAddress
+                ? <EnsAddress address={toAddr} backendEns={item.toEns} />
+                : String(item.params.to)}
+            </div>
+          )}
+          {item.toEns?.name && (
+            <div className="feed-item-ens">ENS: {item.toEns.name}</div>
+          )}
+          {item.risk && (
+            <div className={item.risk.flagged ? 'feed-item-risk feed-item-risk--flagged' : 'feed-item-risk'}>
+              Risk: {item.risk.flagged ? 'Flagged (ScamSniffer)' : 'Clean'}
+              {item.risk.lastUpdated && (
+                <span className="feed-item-risk-updated"> (checked {formatRelativeTime(item.risk.lastUpdated)})</span>
+              )}
+            </div>
+          )}
+          {item.params?.value != null && <div>Value: {String(item.params.value)}</div>}
+          {item.params?.hasData != null && <div>Has data: {String(item.params.hasData)}</div>}
+          {item.params?.chainId != null && <div>Chain ID: {String(item.params.chainId)}</div>}
+          {item.error && <div className="feed-item-error">Error: {item.error}</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function App() {
-  console.log("POPUP BUILD MARKER v999");
-  // session snapshot from background (active tab)
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<TabSession | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // which feed item is expanded in the UI
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  console.log("popup render", session?.feed?.length);
-  // subscribe to storage changes
+  const fetchSession = () => {
+    browser.runtime.sendMessage({ type: MSG_GET_ACTIVE_SESSION }).then((s: TabSession | null) => setSession(s));
+  };
+
   useEffect(() => {
-    let alive = true;
-  
-    const load = async () => {
-      try {
-        const res = await browser.runtime.sendMessage({
-          type: "ENSIGHT/GET_ACTIVE_SESSION",
-        });
-        if (!alive) return;
-        setSession(res?.session ?? null);
-      } catch (error) {
-        if (!alive) return;
-        setSession(null);
-      }
-    };
-    
-    
-  
-    const onChanged = (changes: any, area: string) => {
-      if (area !== "local") return;
-      // easiest: just reload when any local storage changes
-      load();
-    };
-  
-    load();
-    browser.storage.onChanged.addListener(onChanged);
-  
-    return () => {
-      alive = false;
-      browser.storage.onChanged.removeListener(onChanged);
-    };
-  }, []);  
+    fetchSession();
+    const listener = () => fetchSession();
+    browser.storage.onChanged.addListener(listener);
+    return () => browser.storage.onChanged.removeListener(listener);
+  }, []);
 
-  const feed = session?.feed ?? [];
-
-  // find the selected item in the current feed
-  const selected = useMemo(
-    () => feed.find((x) => x.id === selectedId) ?? null,
-    [feed, selectedId]
-  );
+  const counts = session?.counts ?? { connect: 0, sign: 0, tx: 0, chain: 0 };
 
   return (
-    <div className="wrap">
-      <header className="top">
-        <div className="brand">
-          <div className="logoDot" />
-          <div>
-            <div className="title">ensight</div>
-            <div className="sub">
-              {session?.hostname ?? "no active tab"}
-              {session ? ` • ${timeAgo(session.lastSeenAt)}` : ""}
-            </div>
-          </div>
-        </div>
-
-        <div className={session?.isActive ? "status status-on" : "status status-off"}>
-          {session?.isActive ? "web3 active" : "inactive"}
-        </div>
+    <div className="popup">
+      <header className="popup-header">
+        <h1 className="popup-title">ENSight</h1>
+        <ConnectButton showBalance={false} />
       </header>
 
-      {/* quick counters (what happened on this page) */}
-      <section className="counts">
-        <div className="count">
-          <div className="countNum">{session?.counts?.connect ?? 0}</div>
-          <div className="countLbl">connect</div>
-        </div>
-        <div className="count">
-          <div className="countNum">{session?.counts?.sign ?? 0}</div>
-          <div className="countLbl">sign</div>
-        </div>
-        <div className="count">
-          <div className="countNum">{session?.counts?.tx ?? 0}</div>
-          <div className="countLbl">tx</div>
-        </div>
-        <div className="count">
-          <div className="countNum">{session?.counts?.chain ?? 0}</div>
-          <div className="countLbl">chain</div>
+      <section className="popup-profile">
+        <EnsProfile />
+      </section>
+
+      <section className="popup-tab">
+        <div className="popup-tab-hostname">{session?.hostname ?? '—'}</div>
+        <div className="popup-tab-status">
+          {session?.web3Active ? 'Web3 active' : 'Inactive'}
+          {session && ` · ${formatRelativeTime(session.lastSeenAt)}`}
         </div>
       </section>
 
-      {/* main activity feed */}
-      <section className="feed">
-        {feed.length === 0 ? (
-          <div className="empty">
-            <div className="emptyTitle">no wallet activity yet</div>
-            <div className="emptySub">connect / sign / tx will show up here</div>
-          </div>
+      <section className="popup-counts">
+        <span title="Connect">C: {counts.connect}</span>
+        <span title="Sign">S: {counts.sign}</span>
+        <span title="Transaction">T: {counts.tx}</span>
+        <span title="Chain">Ch: {counts.chain}</span>
+      </section>
+
+      <section className="popup-feed">
+        <h2>Activity feed</h2>
+        {session?.feed?.length ? (
+          <ul className="feed-list">
+            {session.feed.map((item) => (
+              <li key={item.id}>
+                <FeedItemRow
+                  item={item}
+                  expanded={expandedId === item.id}
+                  onToggle={() => setExpandedId((id) => (id === item.id ? null : item.id))}
+                />
+              </li>
+            ))}
+          </ul>
         ) : (
-          feed.slice(0, 15).map((x) => (
-            <button
-              key={x.id}
-              className={selectedId === x.id ? "row rowActive" : "row"}
-              onClick={() => setSelectedId((cur) => (cur === x.id ? null : x.id))}
-            >
-              <div className="rowLeft">
-                <div className="rowIcon">{icon(x.kind)}</div>
-
-                <div className="rowMain">
-                  <div className="rowTop">
-                    <span className={pill(x.severity)}>{x.severity}</span>
-                    <span className="rowText">{x.oneLiner ?? x.method}</span>
-                  </div>
-
-                  <div className="rowSub">
-                    {x.page?.hostname ?? "unknown site"}
-                    {typeof x.durationMs === "number" ? ` • ${x.durationMs}ms` : ""}
-                    {x.phase === "before"
-                      ? " • pending"
-                      : x.phase === "error"
-                      ? " • rejected"
-                      : " • ok"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="chev">{selectedId === x.id ? "–" : "+"}</div>
-            </button>
-          ))
+          <p className="feed-empty">No wallet activity on this tab yet.</p>
         )}
       </section>
+    </div>
+  );
+}
 
-      {/* expanded details panel */}
-      {selected ? (
-        <section className="detail">
-          <div className="detailTitle">details</div>
+function EnsProfile() {
+  const { address, isConnected } = useAccount();
+  const { data: name } = useEnsName({ address: address ?? undefined, chainId: 1 });
+  const { data: avatar } = useEnsAvatar({ name: name ?? undefined, chainId: 1 });
 
-          <div className="detailGrid">
-            <div className="kv">
-              <div className="k">method</div>
-              <div className="v mono">{selected.method}</div>
-            </div>
+  if (!isConnected || !address) return null;
 
-            <div className="kv">
-              <div className="k">phase</div>
-              <div className="v mono">{selected.phase}</div>
-            </div>
-
-            {/* tx-specific fields */}
-            {selected.kind === "tx" ? (
-              <>
-                <div className="kv">
-                  <div className="k">to</div>
-                  <div className="v mono">{selected.to ?? "—"}</div>
-                </div>
-
-                <div className="kv">
-                  <div className="k">value</div>
-                  <div className="v mono">{selected.value ?? "—"}</div>
-                </div>
-
-                <div className="kv">
-                  <div className="k">has data</div>
-                  <div className="v mono">{String(!!selected.hasData)}</div>
-                </div>
-              </>
-            ) : null}
-
-            {/* chain-specific fields */}
-            {selected.kind === "chain" ? (
-              <div className="kv">
-                <div className="k">chainId</div>
-                <div className="v mono">{selected.chainId ?? "—"}</div>
-              </div>
-            ) : null}
-
-            {/* errors */}
-            {selected.phase === "error" ? (
-              <div className="kv kvFull">
-                <div className="k">error</div>
-                <div className="v mono">{selected.error?.message ?? "—"}</div>
-              </div>
-            ) : null}
-
-            {/* safe preview */}
-            {selected.paramsPreview ? (
-              <div className="kv kvFull">
-                <div className="k">preview</div>
-                <pre className="v pre">{JSON.stringify(selected.paramsPreview, null, 2)}</pre>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      <footer className="foot">
-        {/* simple manual refresh (useful while developing) */}
-        <button
-          className="ghost"
-          onClick={() => {
-            setSelectedId(null);
-            browser.runtime.sendMessage({ type: "ENSIGHT/GET_ACTIVE_SESSION" }).then((res) => {
-              console.log("ensight: GET_ACTIVE_SESSION response", res);
-              setSession(res?.session ?? null);
-            });
-          }}
-        >
-          refresh
-        </button>
-      </footer>
+  return (
+    <div className="ens-profile">
+      {avatar && <img src={avatar} alt="" className="ens-profile-avatar" />}
+      <div className="ens-profile-text">
+        <span className="ens-profile-name">{name ?? shortAddress(address)}</span>
+        <span className="ens-profile-address">{shortAddress(address)}</span>
+      </div>
     </div>
   );
 }

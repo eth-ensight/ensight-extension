@@ -1,1 +1,0 @@
-// methods for interacting with the ethereum blockchain

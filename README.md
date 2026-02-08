@@ -41,10 +41,23 @@
 
 ## ⚙️ Tech Stack
 
-- WXT  
-- Chrome Extension APIs  
-- Runtime interception hooks  
-- Background workers  
+- **WXT** — Chrome Extension (MV3) build
+- **React** — Popup UI
+- **Wagmi + Viem** — ENS resolution (names, avatars) on Ethereum mainnet
+- **Rainbow Kit** — Wallet connect in popup (optional)
+- **Chrome Extension APIs** — Runtime interception, storage, messaging
+- **Background workers** — Per-tab session and persistence  
+
+---
+
+## 🧪 Development & testing
+
+- **Build:** `pnpm install && pnpm build` → output in `.output/chrome-mv3`
+- **Dev:** `pnpm dev` (or `npm run dev`) → watch build only (Chrome is not auto-launched). Load **Load unpacked** in `chrome://extensions` and select `.output/chrome-mv3`. Reload the extension after code changes.
+- **Tests:** `pnpm test` — unit and integration tests for session logic (kind/severity/one-liner, event → session, serialization) and type helpers.
+- **Verification:** See [VERIFICATION-GUIDE.md](./VERIFICATION-GUIDE.md) for a step-by-step guide to confirm the extension works end-to-end (load, intercept, popup feed, ENS resolution).
+- **ENS:** Popup uses [wagmi](https://wagmi.sh) + [Rainbow Kit](https://rainbowkit.com) per the [ENS quickstart](https://docs.ens.domains/web/quickstart/). ENS resolution (names/avatars) uses Ethereum mainnet (chainId 1). For WalletConnect in the popup, set your own `projectId` from [WalletConnect Cloud](https://cloud.walletconnect.com) in `entrypoints/popup/main.tsx` if needed.
+- **Backend:** The extension calls [ensight-backend](../ensight-backend) for risk checks, ENS reverse lookup, and the knowledge graph. API base URL defaults to `http://localhost:3000`; set `VITE_ENSIGHT_API_URL` in `.env` (or at build time) to use a deployed backend. See [CORE-FUNCTIONALITY.md](./CORE-FUNCTIONALITY.md#backend-integration).
 
 ---
 

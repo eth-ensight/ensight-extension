@@ -1,69 +1,219 @@
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+* {
+  box-sizing: border-box;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+.popup {
+  width: 360px;
+  min-height: 420px;
+  max-height: 560px;
+  padding: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  background: #f8f9fa;
 }
 
-body {
-  margin: 0;
+.popup-header {
   display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+.popup-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
-button {
+.popup-profile {
+  margin-bottom: 12px;
+}
+
+.ens-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ens-profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.ens-profile-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.ens-profile-name {
+  font-weight: 600;
+}
+
+.ens-profile-address {
+  font-size: 11px;
+  color: #666;
+}
+
+.popup-tab {
+  margin-bottom: 10px;
+}
+
+.popup-tab-hostname {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.popup-tab-status {
+  font-size: 12px;
+  color: #666;
+}
+
+.popup-counts {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #555;
+}
+
+.popup-feed h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.feed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.feed-list li {
+  margin-bottom: 6px;
+}
+
+.feed-item {
+  padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+  background: #fff;
+  border: 1px solid #e5e5e5;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.feed-item--info {
+  border-left: 3px solid #0ea5e9;
+}
+
+.feed-item--warn {
+  border-left: 3px solid #f59e0b;
+}
+
+.feed-item--danger {
+  border-left: 3px solid #ef4444;
+}
+
+.feed-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.feed-item-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #666;
+}
+
+.feed-item-oneliner {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-item-phase {
+  font-size: 11px;
+  color: #888;
+}
+
+.feed-item-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+  font-size: 12px;
+  color: #444;
+}
+
+.feed-item-detail > div {
+  margin-bottom: 4px;
+}
+
+.feed-item-error {
+  color: #b91c1c;
+}
+
+.feed-empty {
+  margin: 0;
+  color: #666;
+  font-size: 12px;
+}
+
+.ens-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ens-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+/* Risk badge */
+
+.risk-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.risk-badge--danger {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+/* Risk + ENS in detail panel */
+
+.feed-item-ens {
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.feed-item-risk {
+  font-size: 11px;
+  color: #16a34a;
+}
+
+.feed-item-risk--flagged {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.feed-item-risk-updated {
+  font-weight: 400;
+  color: #888;
 }
